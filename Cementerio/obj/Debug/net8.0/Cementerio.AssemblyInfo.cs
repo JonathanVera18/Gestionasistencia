@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("Cementerio")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+833e44f6e20ea8c486c69acb917da29adca1f121")]
 [assembly: System.Reflection.AssemblyProductAttribute("Cementerio")]
 [assembly: System.Reflection.AssemblyTitleAttribute("Cementerio")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

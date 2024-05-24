@@ -1,13 +1,15 @@
 ﻿using System;
 using Npgsql;
 using System.Diagnostics;
+using System.Text;
 public  class Program
 {
     static string connectionString = "Host=localhost;Username=postgres;Password=1234;Database=Cementerio";
    public static void Main(string[] args)
 {
+    GenerarProcedimientosAlmacenados();
     // Ejecuta el respaldo y restauracion
-        RespaldoBaseDatos("C:/Users/marco/OneDrive/Desktop/CementerioP/Cementerio/respaldo.sql");
+        //RespaldoBaseDatos("C:/Users/marco/OneDrive/Desktop/CementerioP/Cementerio/respaldo.sql");
         //RestauracionBaseDatos("C:/Users/marco/OneDrive/Desktop/CementerioP/Cementerio/respaldo.sql");
     Console.WriteLine(System.IO.Directory.GetCurrentDirectory());
     bool continuar = true;
@@ -353,6 +355,65 @@ static void GenerarConsulta(string entidad, List<string> atributos)
             }
         }
     }
+}
+public static void GenerarProcedimientosAlmacenados()
+{
+    // Obtén la lista de tablas y campos de tu base de datos
+    List<(string NombreEntidad, string[] Campos)> entidades = ObtenerTablasYCampos();
+
+    StringBuilder script = new StringBuilder();
+
+    foreach (var entidad in entidades)
+    {
+        // CREATE
+        script.AppendLine($"CREATE OR REPLACE PROCEDURE Create{entidad.NombreEntidad}({string.Join(", ", entidad.Campos.Select(c => $"{c} VARCHAR"))}) AS $$");
+        script.AppendLine("BEGIN");
+        script.AppendLine($"INSERT INTO {entidad.NombreEntidad}({string.Join(", ", entidad.Campos)}) VALUES ({string.Join(", ", entidad.Campos.Select(c => $"${c}"))});");
+        script.AppendLine("END; $$ LANGUAGE plpgsql;");
+
+        // DELETE
+        script.AppendLine($"CREATE OR REPLACE PROCEDURE Delete{entidad.NombreEntidad}(IN id VARCHAR) AS $$");
+        script.AppendLine("BEGIN");
+        script.AppendLine($"DELETE FROM {entidad.NombreEntidad} WHERE {entidad.Campos[0]} = id;");
+        script.AppendLine("END; $$ LANGUAGE plpgsql;");
+    }
+
+    // Write the script to a file
+    System.IO.File.WriteAllText("CRUDProcedures.sql", script.ToString());
+}
+private static List<(string NombreEntidad, string[] Campos)> ObtenerTablasYCampos()
+{
+    var entidades = new List<(string NombreEntidad, string[] Campos)>();
+
+    using (var conn = new NpgsqlConnection("Host=localhost;Username=postgres;Password=1234;Database=Cementerio"))
+    {
+        conn.Open();
+
+        // Obtén las tablas
+        using (var cmd = new NpgsqlCommand("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'", conn))
+        using (var reader = cmd.ExecuteReader())
+            while (reader.Read())
+            {
+                var nombreEntidad = reader.GetString(0);
+
+                // Obtén los campos para cada tabla
+                using (var connCampos = new NpgsqlConnection("Host=localhost;Username=postgres;Password=1234;Database=Cementerio"))
+                {
+                    connCampos.Open();
+                    using (var cmdCampos = new NpgsqlCommand($"SELECT column_name FROM information_schema.columns WHERE table_name = '{nombreEntidad}'", connCampos))
+                    using (var readerCampos = cmdCampos.ExecuteReader())
+                    {
+                        var campos = new List<string>();
+                        while (readerCampos.Read())
+                            campos.Add(readerCampos.GetString(0));
+
+                        entidades.Add((nombreEntidad, campos.ToArray()));
+                    }
+                }
+            }
+    }
+
+    return entidades;
 }
 
 

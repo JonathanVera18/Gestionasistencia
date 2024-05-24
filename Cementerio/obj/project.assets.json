@@ -196,11 +196,11 @@
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "C:\\Users\\marco\\OneDrive\\Desktop\\CementerioP\\Cementerio\\Cementerio.csproj",
+      "projectUniqueName": "C:\\Users\\marco\\OneDrive\\Desktop\\Gestionautonomo\\Cementerio\\Cementerio.csproj",
       "projectName": "Cementerio",
-      "projectPath": "C:\\Users\\marco\\OneDrive\\Desktop\\CementerioP\\Cementerio\\Cementerio.csproj",
+      "projectPath": "C:\\Users\\marco\\OneDrive\\Desktop\\Gestionautonomo\\Cementerio\\Cementerio.csproj",
       "packagesPath": "C:\\Users\\marco\\.nuget\\packages\\",
-      "outputPath": "C:\\Users\\marco\\OneDrive\\Desktop\\CementerioP\\Cementerio\\obj\\",
+      "outputPath": "C:\\Users\\marco\\OneDrive\\Desktop\\Gestionautonomo\\Cementerio\\obj\\",
       "projectStyle": "PackageReference",
       "configFilePaths": [
         "C:\\Users\\marco\\AppData\\Roaming\\NuGet\\NuGet.Config"
