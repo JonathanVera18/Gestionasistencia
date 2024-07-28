@@ -2,11 +2,15 @@
 using Npgsql;
 using System.Diagnostics;
 using System.Text;
+using System.Collections.Generic;
+
 public  class Program
 {
     static string connectionString = "Host=localhost;Username=postgres;Password=1234;Database=Cementerio";
    public static void Main(string[] args)
 {
+       
+
     GenerarProcedimientosAlmacenados();
     // Ejecuta el respaldo y restauracion
         //RespaldoBaseDatos("C:/Users/marco/OneDrive/Desktop/CementerioP/Cementerio/respaldo.sql");
@@ -23,6 +27,8 @@ public  class Program
         Console.WriteLine("5. Asignar un Rol a Usuario");
         Console.WriteLine("6. Consultar los Usuarios Creados");
         Console.WriteLine("7. Consultar los Roles Creados");
+        Console.WriteLine("8. Generar disparadores de auditoría");
+        Console.WriteLine("9. Ejecutar automatización con transacciones");
         Console.WriteLine("0. Salir");
 
         string opcion = Console.ReadLine().Trim();
@@ -48,6 +54,12 @@ public  class Program
                 break;
             case "7":
                 ConsultarRolesCreados();
+                break;
+            case "8":
+                GenerarDisparadoresAuditoria();
+                break;
+            case "9":
+                EjecutarAutomatizacionConTransacciones();
                 break;
             case "0":
                 continuar = false;
@@ -416,7 +428,203 @@ private static List<(string NombreEntidad, string[] Campos)> ObtenerTablasYCampo
     return entidades;
 }
 
+static void GenerarDisparadoresAuditoria()
+    {
+        List<string> tablas = ObtenerTablas();
+        
+        foreach (string tabla in tablas)
+        {
+            if (tabla != "audit_log") // Excluimos la tabla audit_log
+            {
+                string disparador = GenerarDisparadorAuditoria(tabla);
+                EjecutarComando(disparador);
+            }
+        }
+        
+        Console.WriteLine("Disparadores de auditoría generados correctamente.");
+    }
 
+    static List<string> ObtenerTablas()
+    {
+        List<string> tablas = new List<string>();
+        
+        using (NpgsqlConnection connection = new NpgsqlConnection(connectionString))
+        {
+            connection.Open();
+            using (NpgsqlCommand cmd = new NpgsqlCommand())
+            {
+                cmd.Connection = connection;
+                cmd.CommandText = "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'";
+                using (NpgsqlDataReader reader = cmd.ExecuteReader())
+                {
+                    while (reader.Read())
+                    {
+                        tablas.Add(reader.GetString(0));
+                    }
+                }
+            }
+        }
+
+        return tablas;
+    }
+
+    
+   static string GenerarDisparadorAuditoria(string tabla)
+{
+    StringBuilder sb = new StringBuilder();
+
+    sb.AppendLine($"CREATE OR REPLACE FUNCTION audit_{tabla}_trigger() RETURNS TRIGGER AS $$");
+    sb.AppendLine("BEGIN");
+    sb.AppendLine("    IF (TG_TABLE_NAME = 'audit_log') THEN");
+    sb.AppendLine("        RETURN NULL; -- No auditar la tabla audit_log");
+    sb.AppendLine("    END IF;");
+    sb.AppendLine("    IF (TG_OP = 'DELETE') THEN");
+    sb.AppendLine($"        INSERT INTO audit_log (tabla, operacion, usuario, fecha, datos_antiguos)");
+    sb.AppendLine($"        VALUES (TG_TABLE_NAME, 'DELETE', current_user, current_timestamp, row_to_json(OLD));");
+    sb.AppendLine("        RETURN OLD;");
+    sb.AppendLine("    ELSIF (TG_OP = 'UPDATE') THEN");
+    sb.AppendLine($"        INSERT INTO audit_log (tabla, operacion, usuario, fecha, datos_antiguos, datos_nuevos)");
+    sb.AppendLine($"        VALUES (TG_TABLE_NAME, 'UPDATE', current_user, current_timestamp, row_to_json(OLD), row_to_json(NEW));");
+    sb.AppendLine("        RETURN NEW;");
+    sb.AppendLine("    ELSIF (TG_OP = 'INSERT') THEN");
+    sb.AppendLine($"        INSERT INTO audit_log (tabla, operacion, usuario, fecha, datos_nuevos)");
+    sb.AppendLine($"        VALUES (TG_TABLE_NAME, 'INSERT', current_user, current_timestamp, row_to_json(NEW));");
+    sb.AppendLine("        RETURN NEW;");
+    sb.AppendLine("    END IF;");
+    sb.AppendLine("    RETURN NULL;");
+    sb.AppendLine("END;");
+    sb.AppendLine("$$ LANGUAGE plpgsql;");
+
+    sb.AppendLine($"DROP TRIGGER IF EXISTS audit_{tabla}_trigger ON {tabla};");
+    sb.AppendLine($"CREATE TRIGGER audit_{tabla}_trigger");
+    sb.AppendLine($"AFTER INSERT OR UPDATE OR DELETE ON {tabla}");
+    sb.AppendLine($"FOR EACH ROW EXECUTE FUNCTION audit_{tabla}_trigger();");
+
+    return sb.ToString();
 }
+
+static void EjecutarAutomatizacionConTransacciones()
+{
+    using (NpgsqlConnection connection = new NpgsqlConnection(connectionString))
+    {
+        connection.Open();
+        bool exito = false;
+
+        try
+        {
+            using (NpgsqlTransaction transaction = connection.BeginTransaction())
+            {
+                // Obtener la lista de usuarios
+                List<string> usuarios = ObtenerUsuarios(connection);
+
+                // Revocar acceso a todos los usuarios excepto 'postgres'
+                foreach (string usuario in usuarios)
+                {
+                    if (usuario != "postgres")
+                    {
+                        string comandoRevocacion = $"ALTER USER {usuario} WITH NOLOGIN";
+                        using (NpgsqlCommand cmd = new NpgsqlCommand(comandoRevocacion, connection, transaction))
+                        {
+                            cmd.ExecuteNonQuery();
+                            Console.WriteLine($"Se ha revocado el acceso al usuario '{usuario}'.");
+                        }
+                    }
+                }
+
+                // Commit de la transacción
+                transaction.Commit();
+                exito = true;
+                Console.WriteLine("Automatización completada con éxito.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error durante la automatización: {ex.Message}");
+        }
+
+        // Verificar el resultado fuera de la transacción
+        if (exito)
+        {
+            VerificarAutomatizacion(connection);
+        }
+    }
+}
+
+static List<string> ObtenerUsuarios(NpgsqlConnection connection)
+{
+    List<string> usuarios = new List<string>();
+    using (NpgsqlCommand cmd = new NpgsqlCommand("SELECT usename FROM pg_user WHERE usename != 'postgres'", connection))
+    using (NpgsqlDataReader reader = cmd.ExecuteReader())
+    {
+        while (reader.Read())
+        {
+            usuarios.Add(reader.GetString(0));
+        }
+    }
+    return usuarios;
+}
+
+static void VerificarAutomatizacion(NpgsqlConnection connection)
+{
+    using (NpgsqlCommand cmd = new NpgsqlCommand(@"
+        SELECT usename, 
+               CASE WHEN usesuper THEN 'SUPERUSER'
+                    WHEN (SELECT rolcanlogin FROM pg_roles WHERE rolname = usename) THEN 'LOGIN'
+                    ELSE 'NOLOGIN'
+               END AS status
+        FROM pg_user 
+        WHERE usename != 'postgres'", connection))
+    using (NpgsqlDataReader reader = cmd.ExecuteReader())
+    {
+        bool todosRevocados = true;
+        while (reader.Read())
+        {
+            string username = reader.GetString(0);
+            string status = reader.GetString(1);
+            if (status == "LOGIN" || status == "SUPERUSER")
+            {
+                Console.WriteLine($"ADVERTENCIA: El usuario '{username}' aún puede iniciar sesión (estado: {status}).");
+                todosRevocados = false;
+            }
+            else
+            {
+                Console.WriteLine($"El usuario '{username}' no puede iniciar sesión, como se esperaba (estado: {status}).");
+            }
+        }
+
+        if (todosRevocados)
+        {
+            Console.WriteLine("La automatización se ha realizado correctamente. Todos los usuarios (excepto postgres) tienen el acceso revocado.");
+        }
+        else
+        {
+            Console.WriteLine("La automatización no se completó correctamente. Algunos usuarios aún pueden iniciar sesión.");
+        }
+    }
+}
+
+    static void EjecutarComando(string comando)
+    {
+        try
+        {
+            using (NpgsqlConnection connection = new NpgsqlConnection(connectionString))
+            {
+                connection.Open();
+                using (NpgsqlCommand cmd = new NpgsqlCommand(comando, connection))
+                {
+                    cmd.ExecuteNonQuery();
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error al ejecutar el comando: {ex.Message}");
+        }
+    }
+}
+
+
+
+
 
 
